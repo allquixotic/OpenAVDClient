@@ -24,43 +24,14 @@ jobs:
         with:
           snapcraft-channel: 'latest/stable'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: |
-          cd src
-          npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build Snap package
-        run: |
-          # Create build directory structure
-          mkdir -p build/snap
-          
-          # Copy src contents to build/snap
-          cp -r src/* build/snap/
-          cp package.json build/snap/
-          cp package-lock.json build/snap/ 2>/dev/null || true
-          cp snapcraft.yaml build/snap/
-          
-          cd build/snap
-          
-          # Update snapcraft.yaml paths
-          sed -i 's|source: \$CRAFT_PROJECT_DIR/src|source: .|' snapcraft.yaml || true
-          sed -i 's|icon: src/windows-app-for-linux.desktop.png|icon: windows-app-for-linux.desktop.png|' snapcraft.yaml || true
-          
-          # Build the snap
-          snapcraft pack --destructive-mode
-          
-          # Move snap file to build directory
-          if [ -f *.snap ]; then
-            cd ../
-            mv snap/*.snap .
-          fi
+        run: bun run build:snap
 
       - name: Upload Snap artifact
         uses: actions/upload-artifact@v4
@@ -85,17 +56,11 @@ jobs:
         run: |
           flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: |
-          cd src
-          npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build Flatpak package
         run: |
@@ -181,7 +146,8 @@ jobs:
         with:
           name: Release v${{ steps.tag_version.outputs.version }}
           body: |
-            ## Windows App for Linux v${{ steps.tag_version.outputs.version }}
+            ## OpenAVDClient v${{ steps.tag_version.outputs.version }}
+            OpenAVDClient means Open Azure Virtual Desktop Client.
             
             ### Installation
             

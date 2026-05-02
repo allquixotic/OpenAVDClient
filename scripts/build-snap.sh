@@ -20,6 +20,7 @@ cd build/snap
 
 # Update snapcraft.yaml paths since we're now in build/snap
 # The source should be relative to current directory (src files are now in root)
+# shellcheck disable=SC2016
 sed -i 's|source: \$CRAFT_PROJECT_DIR/src|source: .|' snapcraft.yaml || true
 # Update icon path - icon is now in root, not src/
 sed -i 's|icon: src/windows-app-for-linux.desktop.png|icon: windows-app-for-linux.desktop.png|' snapcraft.yaml || true
@@ -29,9 +30,9 @@ echo "Building snap package..."
 snapcraft pack --destructive-mode
 
 # Move snap file to build directory
-if [ -f *.snap ]; then
-    cd ../
-    mv snap/*.snap .
+snap_files=( *.snap )
+if ((${#snap_files[@]})); then
+    mv "${snap_files[@]}" ../
     echo "Snap package moved to build directory"
 fi
 

@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=Windows App for Linux
-Comment=Unofficial client for Windows App - Access Azure Virtual Desktops on Linux
+Name=OpenAVDClient
+Comment=Open Azure Virtual Desktop Client - access Azure Virtual Desktop web sessions
 Exec=windows-app-for-linux
 Icon=windows-app-for-linux.desktop.png
 Type=Application

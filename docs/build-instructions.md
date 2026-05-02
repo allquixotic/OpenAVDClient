@@ -1,57 +1,67 @@
-# Build Instructions for Windows App for Linux
-
-## Prerequisites
-
-### For Snap Package:
+# Build Instructions for OpenAVDClient
+OpenAVDClient means **Open Azure Virtual Desktop Client**. These instructions cover development, Linux packaging, and macOS Apple Silicon release builds.
+## Common development commands
+Install dependencies from the repository root:
+```bash
+bun install
+```
+Run validation:
+```bash
+bun run lint
+bun run test
+bun run verify
+```
+Run from source:
+```bash
+bun run start
+```
+## macOS arm64 build
+Build the regular electron-builder macOS artifacts:
+```bash
+bun run build:mac
+```
+Build only the unpacked `.app`:
+```bash
+bun run build:mac:dir
+```
+The app bundle displays as `OpenAVDClient.app` and uses the bundled `.icns` icon.
+## Signed, notarized, stapled macOS release
+The `Justfile` uses a Developer ID Application identity, `xcrun notarytool`, and `xcrun stapler`.
+Create or refresh the notarytool keychain profile:
+```bash
+APPLE_ID="you@example.com" APP_PASSWORD="app-specific-password" just macos-store-notary-credentials
+```
+If `TEAM_ID` is not provided, the script tries to derive it from `CODESIGN_ID`.
+Build, sign, notarize, staple, and validate:
+```bash
+just macos-release
+```
+Defaults:
+- `NOTARY_PROFILE=OpenAVDClientNotaryProfile`
+- first available `Developer ID Application` identity if `CODESIGN_ID`/`CSC_NAME` is unset
+- output directory `build/dist`
+## Snap package
+Install Snapcraft:
 ```bash
 sudo snap install snapcraft --classic
 ```
-
-### For Flatpak Package:
+Build:
 ```bash
-# Install Flatpak and Flatpak Builder
+bun run build:snap
+```
+The Snap command remains `windows-app-for-linux` for compatibility, while desktop UI metadata displays `OpenAVDClient`.
+## Flatpak package
+Install Flatpak tooling:
+```bash
 sudo apt install flatpak flatpak-builder
-# Add Flathub repository
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 ```
-
-## Icon Setup
-
-**IMPORTANT:** You need to add an icon file before building:
-1. Place your icon file as `com.microsoft.WindowsAppForLinux.png` in the project root (512x512 pixels recommended)
-2. The icon will be used for both Snap and Flatpak packages
-3. If you don't have an icon, you can create a simple one or download a placeholder
-
-## Building Snap Package
-
+Build:
 ```bash
-# Build the snap package
-snapcraft
-
-# Install locally for testing
-sudo snap install windows-app-for-linux_1.0.0_amd64.snap --dangerous
-
-# Run the application
-windows-app-for-linux
+bun run build:flatpak
 ```
-
-## Building Flatpak Package
-
+Install locally:
 ```bash
-# Build the flatpak package
-flatpak-builder build-dir com.microsoft.WindowsAppForLinux.yml --force-clean
-
-# Install locally for testing
-flatpak-builder --user --install --force-clean build-dir com.microsoft.WindowsAppForLinux.yml
-
-# Run the application
-flatpak run com.microsoft.WindowsAppForLinux
+bun run install:flatpak
 ```
-
-## Notes
-
-- Make sure you have an icon file (`com.microsoft.WindowsAppForLinux.png`) in the project root
-- The icon should be at least 512x512 pixels for best results
-- For snap, the icon will be automatically included from the desktop file
-- For flatpak, the icon needs to be specified in the manifest
-
+The Flatpak app-id currently remains `com.microsoft.WindowsAppForLinux` for upstream compatibility.

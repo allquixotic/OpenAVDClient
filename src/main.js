@@ -2,25 +2,34 @@ const { app, BrowserWindow, session, shell, Menu, dialog, ipcMain } = require('e
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const {
+  APP_DESCRIPTION,
+  APP_DISPLAY_NAME,
+  DEFAULT_CLIENT_HINT_HEADERS,
+  DEFAULT_CONNECTION_URL,
+  DEFAULT_USER_AGENT
+} = require('./app-metadata');
+const {
+  getFocusedInputAction,
+  isSystemKey,
+  isWindowReadyForInput
+} = require('./input-guard');
+app.setName(APP_DISPLAY_NAME);
 
-// Set userData path to a persistent location
-// In snaps, use SNAP_USER_DATA if available, otherwise use standard XDG config directory
+// Set userData path to a persistent location.
+// In snaps, use SNAP_USER_DATA. On Linux, use the XDG config directory.
+// On macOS and other platforms, keep Electron's native default path.
 if (process.env.SNAP_USER_DATA) {
   // Running in a snap - use snap's persistent user data directory
   app.setPath('userData', process.env.SNAP_USER_DATA);
   // Will be logged after logger is initialized
-} else {
-  // Not in a snap - use standard config directory
+} else if (process.platform === 'linux') {
+  // Not in a snap on Linux - use standard XDG config directory
   const userDataPath = path.join(os.homedir(), '.config', 'windows-app-for-linux');
   app.setPath('userData', userDataPath);
   // Will be logged after logger is initialized
 }
 
-// Default User-Agent string
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0';
-
-// Default connection address
-const DEFAULT_CONNECTION_URL = 'https://windows.cloud.microsoft/#/devices';
 
 // Log levels
 const LOG_LEVELS = {
@@ -100,7 +109,11 @@ const logger = {
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 // Enable features that browsers have by default - critical for RDP
-app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder,SharedArrayBuffer,CrossOriginOpenerPolicy,CrossOriginEmbedderPolicy');
+const enabledFeatures = ['SharedArrayBuffer', 'CrossOriginOpenerPolicy', 'CrossOriginEmbedderPolicy'];
+if (process.platform === 'linux') {
+  enabledFeatures.unshift('VaapiVideoDecoder');
+}
+app.commandLine.appendSwitch('enable-features', enabledFeatures.join(','));
 // Enable shared memory (needed for RDP/remote desktop) - this is critical!
 app.commandLine.appendSwitch('enable-blink-features', 'SharedArrayBuffer');
 // Allow WebRTC and related features
@@ -110,10 +123,11 @@ app.commandLine.appendSwitch('enable-accelerated-2d-canvas');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 // Enable WebAssembly (RDP client uses this)
 app.commandLine.appendSwitch('enable-webassembly');
-// Use /tmp instead of /dev/shm for shared memory (avoids permission issues)
-app.commandLine.appendSwitch('disable-dev-shm-usage');
-// Note: We're NOT using --no-sandbox as it causes shared memory issues
-// Instead, we'll rely on the sandbox: false in webPreferences for new windows
+// Use /tmp instead of /dev/shm for shared memory on Linux (avoids permission issues)
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('disable-dev-shm-usage');
+}
+// Note: We're NOT using --no-sandbox; renderer windows are sandboxed.
 
 // Load configuration early (before logger is used)
 loadConfig();
@@ -121,8 +135,10 @@ loadConfig();
 // Log userData path after config is loaded
 if (process.env.SNAP_USER_DATA) {
   logger.info('Using snap userData path:', process.env.SNAP_USER_DATA);
+} else if (process.platform === 'linux') {
+  logger.info('Using standard Linux userData path:', app.getPath('userData'));
 } else {
-  logger.info('Using standard userData path:', app.getPath('userData'));
+  logger.info('Using platform userData path:', app.getPath('userData'));
 }
 
 // Global error handling for the main process
@@ -139,9 +155,57 @@ process.on('unhandledRejection', (reason, promise) => {
 let mainWindow;
 const windows = new Set(); // Track all windows for menu updates
 
+function toggleFullscreen(win) {
+  const isFullscreen = win.isFullScreen();
+  win.setFullScreen(!isFullscreen);
+  setTimeout(() => {
+    if (!win.isDestroyed()) {
+      win.setMenuBarVisibility(!win.isFullScreen());
+    }
+  }, 100);
+}
+
+function toggleDevTools(win) {
+  if (win.webContents.isDevToolsOpened()) {
+    win.webContents.closeDevTools();
+  } else {
+    win.webContents.openDevTools();
+  }
+}
+
+function attachInputFocusGuard(win, label, options = {}) {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (!isWindowReadyForInput(win)) {
+      event.preventDefault();
+      logger.warning(`[${label}] Prevented keyboard input while window was not focused`);
+      return;
+    }
+
+    const action = getFocusedInputAction(input, options);
+    if (action === 'ignore') {
+      return;
+    }
+
+    if (action === 'toggle-fullscreen') {
+      event.preventDefault();
+      toggleFullscreen(win);
+    } else if (action === 'toggle-devtools') {
+      event.preventDefault();
+      toggleDevTools(win);
+    } else if (action === 'force-close') {
+      event.preventDefault();
+      logger.debug(`[${label}] Force closing via Ctrl/Cmd+${input.key}`);
+      win.destroy();
+    } else if (isSystemKey(input) && !input.control && !input.shift) {
+      return;
+    }
+  });
+}
+
 // About dialog
 function showAboutDialog() {
   const aboutWindow = new BrowserWindow({
+    title: `About ${APP_DISPLAY_NAME}`,
     width: 400,
     height: 300,
     parent: mainWindow,
@@ -149,7 +213,8 @@ function showAboutDialog() {
     resizable: false,
     webPreferences: {
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      sandbox: true
     }
   });
 
@@ -158,7 +223,7 @@ function showAboutDialog() {
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>About</title>
+  <title>About ${APP_DISPLAY_NAME}</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -203,10 +268,10 @@ function showAboutDialog() {
   </style>
 </head>
 <body>
-  <h1>Windows App for Linux</h1>
+  <h1>${APP_DISPLAY_NAME}</h1>
   <div class="version">Version 1.0.0</div>
   <div class="description">
-    Unofficial client for Windows App - Access Azure Virtual Desktops on Linux via Windows App web access.
+    ${APP_DESCRIPTION}
   </div>
   <button onclick="window.close()">Close</button>
 </body>
@@ -251,6 +316,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
       preload: preloadPath
     }
   });
@@ -569,12 +635,8 @@ function createMenu() {
           label: 'Toggle Developer Tools',
           accelerator: 'F12',
           click: (item, focusedWindow) => {
-            if (focusedWindow) {
-              if (focusedWindow.webContents.isDevToolsOpened()) {
-                focusedWindow.webContents.closeDevTools();
-              } else {
-                focusedWindow.webContents.openDevTools();
-              }
+            if (isWindowReadyForInput(focusedWindow)) {
+              toggleDevTools(focusedWindow);
             }
           }
         },
@@ -591,8 +653,8 @@ function createMenu() {
           label: 'Toggle Fullscreen',
           accelerator: 'F11',
           click: (item, focusedWindow) => {
-            if (focusedWindow) {
-              focusedWindow.setFullScreen(!focusedWindow.isFullScreen());
+            if (isWindowReadyForInput(focusedWindow)) {
+              toggleFullscreen(focusedWindow);
             }
           }
         }
@@ -614,7 +676,7 @@ function createMenu() {
       label: 'Help',
       submenu: [
         {
-          label: 'About Windows App for Linux',
+          label: `About ${APP_DISPLAY_NAME}`,
           click: () => {
             showAboutDialog();
           }
@@ -669,6 +731,7 @@ function createMenu() {
 function createWindow(isFullscreen = false) {
   // Create the browser window
   mainWindow = new BrowserWindow({
+    title: APP_DISPLAY_NAME,
     width: appConfig.windowWidth,
     height: appConfig.windowHeight,
     fullscreen: isFullscreen,
@@ -677,8 +740,7 @@ function createWindow(isFullscreen = false) {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true,
-      // Enable permissions for camera, microphone, etc.
-      permissions: ['camera', 'microphone', 'notifications']
+      sandbox: true
     },
     show: false // Don't show until ready
   });
@@ -686,6 +748,11 @@ function createWindow(isFullscreen = false) {
   // Set User-Agent and browser-like headers before loading
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
     details.requestHeaders['User-Agent'] = appConfig.userAgent;
+    for (const [header, value] of Object.entries(DEFAULT_CLIENT_HINT_HEADERS)) {
+      if (!details.requestHeaders[header]) {
+        details.requestHeaders[header] = value;
+      }
+    }
     // Add headers that browsers send by default
     if (!details.requestHeaders['Accept']) {
       details.requestHeaders['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8';
@@ -714,6 +781,7 @@ function createWindow(isFullscreen = false) {
     // Use the same session as the main window to share cookies/auth
     // This is critical for authentication to work across windows
     const newWindow = new BrowserWindow({
+      title: APP_DISPLAY_NAME,
       width: 1920,
       height: 1080,
       fullscreen: false, // New windows open in windowed mode (can toggle with F11)
@@ -723,7 +791,7 @@ function createWindow(isFullscreen = false) {
         nodeIntegration: false,
         contextIsolation: true,
         webSecurity: true,
-        permissions: ['camera', 'microphone', 'notifications'],
+        sandbox: true,
         // Use the same session as the main window - this shares cookies/auth!
         session: session.defaultSession,
         // DevTools disabled by default - can be toggled via menu (Ctrl+Shift+I)
@@ -731,12 +799,8 @@ function createWindow(isFullscreen = false) {
         // Additional stability options
         backgroundThrottling: false,
         offscreen: false,
-        // Enable browser-like features needed for RDP
-        enableWebSQL: false,
         // Enable features that browsers have by default
         enableBlinkFeatures: 'SharedArrayBuffer',
-        // Disable sandbox for better compatibility with RDP client
-        sandbox: false,
         // Additional options that might help
         v8CacheOptions: 'code'
       },
@@ -820,7 +884,7 @@ function createWindow(isFullscreen = false) {
             (function() {
               const body = document.body;
               if (body && body.innerHTML.trim() === '') {
-                logger.warning('[New Window] Page appears to be blank - no content detected');
+                console.warn('[New Window] Page appears to be blank - no content detected');
                 return true;
               }
               return false;
@@ -847,6 +911,8 @@ function createWindow(isFullscreen = false) {
     // Debug: Log when page title changes
     newWindow.webContents.on('page-title-updated', (event, title) => {
       logger.debug('[New Window] Title updated:', title);
+      event.preventDefault();
+      newWindow.setTitle(APP_DISPLAY_NAME);
     });
 
     // Monitor network requests
@@ -1020,9 +1086,9 @@ function createWindow(isFullscreen = false) {
           if (navigator.permissions && navigator.permissions.query) {
             const originalQuery = navigator.permissions.query.bind(navigator.permissions);
             navigator.permissions.query = function(descriptor) {
-              logger.debug('[Permissions API] Query:', descriptor.name);
+              console.debug('[Permissions API] Query:', descriptor.name);
               if (descriptor.name === 'camera' || descriptor.name === 'microphone' || descriptor.name === 'media') {
-                logger.debug('[Permissions API] Returning granted for:', descriptor.name);
+                console.debug('[Permissions API] Returning granted for:', descriptor.name);
                 return Promise.resolve({ state: 'granted', onchange: null });
               }
               return originalQuery(descriptor);
@@ -1031,7 +1097,7 @@ function createWindow(isFullscreen = false) {
           
           // Also ensure getUserMedia works by pre-granting permissions
           if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            logger.debug('[MediaDevices] getUserMedia API available');
+            console.debug('[MediaDevices] getUserMedia API available');
           }
         })();
       `).catch(() => {});
@@ -1059,32 +1125,32 @@ function createWindow(isFullscreen = false) {
           
           // Try to catch and handle errors that might cause crashes
           window.addEventListener('error', function(e) {
-            logger.debug('Global error caught:', e.message, e.filename, e.lineno);
+            console.debug('Global error caught:', e.message, e.filename, e.lineno);
             try {
               e.preventDefault();
             } catch (err) {
-              logger.error('Error preventing default:', err);
+              console.error('Error preventing default:', err);
             }
             return true;
           }, true);
           
           window.addEventListener('unhandledrejection', function(e) {
-            logger.debug('Unhandled promise rejection:', e.reason);
+            console.debug('Unhandled promise rejection:', e.reason);
             try {
               e.preventDefault();
             } catch (err) {
-              logger.error('Error preventing default in unhandledrejection:', err);
+              console.error('Error preventing default in unhandledrejection:', err);
             }
           });
           
           // Handle window beforeunload - don't prevent closing
           window.addEventListener('beforeunload', function(e) {
             try {
-              logger.debug('Window beforeunload event');
+              console.debug('Window beforeunload event');
               // Don't prevent the unload - allow the window to close
               // The page should be able to close normally
             } catch (err) {
-              logger.error('Error in beforeunload handler:', err);
+              console.error('Error in beforeunload handler:', err);
             }
           });
         })();
@@ -1135,51 +1201,7 @@ function createWindow(isFullscreen = false) {
       }, 100);
     });
     
-    newWindow.webContents.on('before-input-event', (event, input) => {
-      // Allow system shortcuts to pass through (Windows key, Alt+Tab, etc.)
-      // These are system-level shortcuts that should work even in fullscreen
-      const systemKeys = ['Super', 'Meta', 'Alt', 'Tab', 'Escape'];
-      const isSystemKey = systemKeys.includes(input.key) || 
-                         (input.alt && input.key === 'Tab') ||
-                         (input.meta && input.key !== 'F11' && input.key !== 'F12');
-      
-      // Only handle our specific shortcuts, let system shortcuts pass through
-      if (input.key === 'F11') {
-        const isFullscreen = newWindow.isFullScreen();
-        newWindow.setFullScreen(!isFullscreen);
-        // Update menu bar visibility after toggling fullscreen
-        setTimeout(() => {
-          if (!newWindow.isDestroyed()) {
-            newWindow.setMenuBarVisibility(!newWindow.isFullScreen());
-          }
-        }, 100);
-      } else if (input.key === 'F12') {
-        // Toggle DevTools with F12 (like Edge)
-        if (newWindow.webContents.isDevToolsOpened()) {
-          newWindow.webContents.closeDevTools();
-        } else {
-          newWindow.webContents.openDevTools();
-        }
-      } else if ((input.control || input.meta) && input.key === 'W') {
-        // Ctrl+W or Cmd+W - Force close the window
-        event.preventDefault();
-        logger.debug('[New Window] Force closing via Ctrl+W');
-        if (!newWindow.isDestroyed()) {
-          newWindow.destroy();
-        }
-      } else if ((input.control || input.meta) && input.key === 'Q') {
-        // Ctrl+Q or Cmd+Q - Force close the window
-        event.preventDefault();
-        logger.debug('[New Window] Force closing via Ctrl+Q');
-        if (!newWindow.isDestroyed()) {
-          newWindow.destroy();
-        }
-      } else if (isSystemKey && !input.control && !input.shift) {
-        // Allow system shortcuts to pass through to the OS
-        // Don't prevent default for system keys
-        return;
-      }
-    });
+    attachInputFocusGuard(newWindow, 'New Window', { allowForceClose: true });
 
     // Return deny since we're handling the window ourselves
     // This prevents Electron from creating a duplicate window
@@ -1210,6 +1232,12 @@ function createWindow(isFullscreen = false) {
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
     logger.error('[Main Window] Failed to load:', validatedURL, errorCode, errorDescription);
+  });
+
+  mainWindow.webContents.on('page-title-updated', (event, title) => {
+    logger.debug('[Main Window] Title updated:', title);
+    event.preventDefault();
+    mainWindow.setTitle(APP_DISPLAY_NAME);
   });
 
   // Handle window closed
@@ -1264,37 +1292,7 @@ function createWindow(isFullscreen = false) {
     }, 100);
   });
   
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    // Allow system shortcuts to pass through (Windows key, Alt+Tab, etc.)
-    // These are system-level shortcuts that should work even in fullscreen
-    const systemKeys = ['Super', 'Meta', 'Alt', 'Tab', 'Escape'];
-    const isSystemKey = systemKeys.includes(input.key) || 
-                       (input.alt && input.key === 'Tab') ||
-                       (input.meta && input.key !== 'F11' && input.key !== 'F12');
-    
-    // Only handle our specific shortcuts, let system shortcuts pass through
-    if (input.key === 'F11') {
-      const isFullscreen = mainWindow.isFullScreen();
-      mainWindow.setFullScreen(!isFullscreen);
-      // Update menu bar visibility after toggling fullscreen
-      setTimeout(() => {
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.setMenuBarVisibility(!mainWindow.isFullScreen());
-        }
-      }, 100);
-    } else if (input.key === 'F12') {
-      // Toggle DevTools with F12 (like Edge)
-      if (mainWindow.webContents.isDevToolsOpened()) {
-        mainWindow.webContents.closeDevTools();
-      } else {
-        mainWindow.webContents.openDevTools();
-      }
-    } else if (isSystemKey && !input.control && !input.shift) {
-      // Allow system shortcuts to pass through to the OS
-      // Don't prevent default for system keys
-      return;
-    }
-  });
+  attachInputFocusGuard(mainWindow, 'Main Window');
 }
 
 // Set User-Agent for the entire session

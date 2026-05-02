@@ -1,9 +1,15 @@
 #!/bin/bash
-# Setup script for Windows App for Linux - Development Environment
+# Setup script for OpenAVDClient - Development Environment
 
-echo "Setting up Windows App for Linux development environment..."
+echo "Setting up OpenAVDClient development environment..."
 
-# Check if Node.js is installed
+# Check if Bun is installed
+if ! command -v bun &> /dev/null; then
+    echo "Bun is not installed. Install Bun from https://bun.sh/ and re-run this script."
+    exit 1
+fi
+
+# Check if Node.js is installed for tests/linting
 if ! command -v node &> /dev/null; then
     echo "Node.js is not installed."
     echo ""
@@ -25,7 +31,7 @@ if ! command -v node &> /dev/null; then
 fi
 
 echo "Node.js version: $(node --version)"
-echo "npm version: $(npm --version)"
+echo "Bun version: $(bun --version)"
 echo ""
 
 # Create build directory
@@ -34,16 +40,15 @@ mkdir -p build
 
 # Install dependencies
 echo "Installing dependencies..."
-cd src
-npm install
-
-if [ $? -eq 0 ]; then
+if bun install; then
     echo ""
     echo "Setup complete! You can now:"
-    echo "  - Run the app: cd src && npm start"
-    echo "  - Build snap: cd src && npm run build:snap"
-    echo "  - Build flatpak: cd src && npm run build:flatpak"
-    echo "  - Clean build artifacts: cd src && npm run clean"
+    echo "  - Run the app: bun run start"
+    echo "  - Run validation: bun run verify"
+    echo "  - Build macOS: bun run build:mac"
+    echo "  - Build snap: bun run build:snap"
+    echo "  - Build flatpak: bun run build:flatpak"
+    echo "  - Clean build artifacts: bun run clean"
 else
     echo ""
     echo "Failed to install dependencies. Please check the error messages above."

@@ -1,14 +1,13 @@
 name: windows-app-for-linux
-title: Windows App for Linux
+title: OpenAVDClient
 license: MIT
 version: '1.0.0'
-summary: Unofficial client for Windows App - Access Azure Virtual Desktops on Linux
+summary: Open Azure Virtual Desktop Client for Azure Virtual Desktop web access
 description: |
-  An unofficial standalone Electron application that provides native Linux access to 
-  Azure Virtual Desktops via Windows App web access. This unofficial client wraps the 
-  Windows Cloud Devices web interface in an Electron shell, configured to behave like 
-  Microsoft Edge browser. It enables full access to Azure Virtual Desktop sessions with 
-  proper browser emulation, device permissions, and remote desktop support.
+  OpenAVDClient means Open Azure Virtual Desktop Client. It is an unofficial standalone
+  Electron application that provides native Linux access to Azure Virtual Desktop web
+  sessions through Windows App web access. It wraps the Windows Cloud Devices web
+  interface in an Electron shell configured to behave like Microsoft Edge.
 contact: https://github.com/mariuszkopowski/windows-app-for-linux
 website: https://github.com/mariuszkopowski/windows-app-for-linux
 source-code: https://github.com/mariuszkopowski/windows-app-for-linux
@@ -198,8 +197,8 @@ parts:
       if [ "$ICON_COPIED" = "true" ]; then
         cat > "$CRAFT_PART_INSTALL/usr/share/applications/windows-app-for-linux.desktop" << 'EOF'
       [Desktop Entry]
-      Name=Windows App for Linux
-      Comment=Unofficial client for Windows App - Access Azure Virtual Desktops on Linux
+      Name=OpenAVDClient
+      Comment=Open Azure Virtual Desktop Client - access Azure Virtual Desktop web sessions
       Exec=windows-app-for-linux
       Icon=windows-app-for-linux
       Type=Application
@@ -208,8 +207,8 @@ parts:
       else
         cat > "$CRAFT_PART_INSTALL/usr/share/applications/windows-app-for-linux.desktop" << 'EOF'
       [Desktop Entry]
-      Name=Windows App for Linux
-      Comment=Unofficial client for Windows App - Access Azure Virtual Desktops on Linux
+      Name=OpenAVDClient
+      Comment=Open Azure Virtual Desktop Client - access Azure Virtual Desktop web sessions
       Exec=windows-app-for-linux
       Type=Application
       Categories=Network;WebBrowser;RemoteAccess;
@@ -314,7 +313,7 @@ parts:
       # Manual icon cache update script
       # Run: windows-app-for-linux.update-icon-cache
       
-      echo "Updating icon cache for Windows App for Linux..."
+      echo "Updating icon cache for OpenAVDClient..."
       
       # Update snap's icon cache
       if [ -d "$SNAP/usr/share/icons/hicolor" ]; then

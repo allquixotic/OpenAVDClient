@@ -1,12 +1,14 @@
 # Browser vs Electron Flag Comparison
 
+OpenAVDClient means Open Azure Virtual Desktop Client. This note compares browser behavior with the Electron wrapper.
+
 ## To test in browser:
 ```bash
 ./test-browser.sh
 ```
 
 This will:
-1. Launch Chromium with the same User-Agent
+1. Launch Chromium with the same Edge-compatible User-Agent
 2. Log all output to `/tmp/chromium-test.log`
 3. You can observe what works in the browser
 
@@ -37,8 +39,6 @@ This will:
 - **Electron**: Needs explicit permission handlers
 - **Status**: ✅ Added permission handlers
 
-## Next steps:
-1. Run the browser test and check `/tmp/chromium-test.log`
-2. Compare network requests between browser and Electron
-3. Check if COOP/COEP headers are needed for SharedArrayBuffer
+## Notes:
+OpenAVDClient currently injects a Microsoft Edge 147 Windows x64 User-Agent and matching Client Hints. Windows 11 still uses `Windows NT 10.0` in the legacy User-Agent string; the Windows 11 distinction is represented via Client Hints such as `Sec-CH-UA-Platform-Version`.
 
